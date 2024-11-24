@@ -1,0 +1,65 @@
+(* Types and constants *)
+type key.
+type pkey.
+type skey.
+type message.
+type voter.
+type ballot.
+
+(* Channels *)
+free public_ch: channel.
+free private_ch: channel [private].
+
+(* Events *)
+event VoterVoted(voter, message).
+event BallotCounted(message).
+event ElectionStarted().
+event ElectionEnded().
+
+(* Functions *)
+fun pk(skey): pkey.
+fun encrypt(message, pkey): ballot.
+fun decrypt(ballot, skey): message.
+fun add_ballots(ballot, ballot): ballot.
+
+(* Equations modeling homomorphic property *)
+equation forall m1: message, m2: message, sk: skey;
+    decrypt(add_ballots(encrypt(m1, pk(sk)), encrypt(m2, pk(sk))), sk)
+    = plus(decrypt(encrypt(m1, pk(sk)), sk),
+          decrypt(encrypt(m2, pk(sk)), sk)).
+
+(* Security properties *)
+query v: voter, m: message;
+    event(VoterVoted(v, m)) ==> event(BallotCounted(m)).
+
+query v1: voter, v2: voter, m1: message, m2: message;
+    event(VoterVoted(v1, m1)) && event(VoterVoted(v2, m2)) &&
+    v1 <> v2 ==> m1 <> m2.
+
+(* Main process *)
+let VoterProcess(v: voter, m: message, pk: pkey) =
+    (* Voter casts their vote *)
+    let b = encrypt(m, pk) in
+    out(public_ch, b);
+    event VoterVoted(v, m).
+
+let TallyProcess(sk: skey) =
+    (* Election authority tallies the votes *)
+    in(public_ch, b: ballot);
+    let m = decrypt(b, sk) in
+    event BallotCounted(m).
+
+process
+    (* Key generation *)
+    new sk: skey;
+    let pk = pk(sk) in
+    out(public_ch, pk);
+    
+    (* Start election *)
+    event ElectionStarted();
+    
+    (* Run voter and tally processes *)
+    ((!VoterProcess(v, m, pk)) | (!TallyProcess(sk)));
+    
+    (* End election *)
+    event ElectionEnded()
